@@ -1,0 +1,81 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import numpy as np
+import seaborn as sns
+
+PATH = '/Users/nikhilmanoj/Downloads/Biomechanics MSk Lab/UKAvTKA /UKAvTKAdatasetV4.xlsx'
+
+df = pd.read_excel(PATH, skiprows=1)
+
+tka = df[df['procedure'] == 'TKR']
+uka = df[df['procedure'] == 'UKR']
+
+metrics = {
+    'BOS (m)':             ['mean_BOS_R,L_4ms',         'mean_BOS_R/L_5ms',          'mean_BOS_R/L_65ms'],
+    'Cadence (steps/min)': ['mean_cadence_R,L_4ms',      'mean_cadence_R,L_5ms',      'mean_cadence_R,L_65ms'],
+    'Stride Length (m)':   ['mean_StrideLength_R,L_4ms', 'mean_StrideLength_R,L_5ms', 'mean_StrideLength_R,L_65ms'],
+}
+speed_labels = ['4.0 m/s', '5.0 m/s', '6.5 m/s']
+
+sns.set(style='white')
+
+tka_color = '#4C72B0'
+uka_color = '#DD8452'
+
+fig, axes = plt.subplots(3, 3, figsize=(14, 16))
+fig.suptitle('TKA vs UKA: Gait Metrics Across Walking Speeds', fontsize=13, fontweight='bold')
+
+for row_idx, (metric_name, cols) in enumerate(metrics.items()):
+
+    all_vals = pd.concat([tka[cols].stack(), uka[cols].stack()]).dropna()
+    y_min = all_vals.min() - 0.08 * (all_vals.max() - all_vals.min())
+    y_max = all_vals.max() + 0.08 * (all_vals.max() - all_vals.min())
+
+    for col_idx, (col, speed_label) in enumerate(zip(cols, speed_labels)):
+        ax = axes[row_idx, col_idx]
+
+        tka_data = tka[col].dropna().reset_index(drop=True)
+        uka_data = uka[col].dropna().reset_index(drop=True)
+
+        plot_df = pd.DataFrame({
+            'value': pd.concat([tka_data, uka_data], ignore_index=True),
+            'group': ['TKA'] * len(tka_data) + ['UKA'] * len(uka_data)
+        })
+
+        sns.boxplot(
+            data=plot_df, x='group', y='value',
+            palette={'TKA': tka_color, 'UKA': uka_color},
+            width=0.5, ax=ax,
+            linewidth=1.2,
+            showfliers=False
+        )
+
+        ax.set_ylim(y_min, y_max)
+
+        if row_idx == 0:
+            ax.set_title(speed_label, fontsize=11, fontweight='bold', pad=10)
+
+        if col_idx == 0:
+            ax.set_ylabel(metric_name, fontsize=10, labelpad=8)
+        else:
+            ax.set_ylabel('')
+            ax.set_yticklabels([])
+
+        ax.set_xlabel('')
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(5))
+
+        sns.despine(ax=ax)
+
+from matplotlib.patches import Patch
+legend_elements = [Patch(facecolor=tka_color, label='TKA'),
+                   Patch(facecolor=uka_color, label='UKA')]
+fig.legend(handles=legend_elements, loc='lower center', ncol=2,
+           fontsize=10, frameon=False, bbox_to_anchor=(0.5, 0.01))
+
+fig.subplots_adjust(top=0.93, bottom=0.10, left=0.12, hspace=0.55, wspace=0.35)
+
+plt.savefig('/Users/nikhilmanoj/Downloads/Biomechanics MSk Lab/UKAvTKA /gait_boxplots.png',
+            dpi=300, bbox_inches='tight', facecolor='white')
+plt.show()
