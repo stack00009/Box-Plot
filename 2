@@ -1,0 +1,117 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import matplotlib.patches as mpatches
+import seaborn as sns
+
+PATH = '/Users/nikhilmanoj/Downloads/Biomechanics MSk Lab/UKAvTKA /UKAvTKAdatasetV5.xlsx'
+df = pd.read_excel(PATH, header=0)
+
+tka     = df[df['procedure'] == 'TKA']
+uka     = df[df['procedure'] == 'UKA']
+control = df[df['procedure'] == 'Control']
+
+tka_color     = '#4C72B0'
+uka_color     = '#DD8452'
+control_color = '#55A868'
+palette = {'TKA': tka_color, 'UKA': uka_color, 'Control': control_color}
+
+# (metric name, column suffixes, major locator, minor locator, y format)
+metric_defs = [
+    ('BOS (m)',                    ['mean_BOS_R.L_4ms',          'mean_BOS_R.L_5ms',          'mean_BOS_R.L_65ms'],           ticker.MultipleLocator(0.05), ticker.MultipleLocator(0.01), '%.2f'),
+    ('Cadence (steps/min)',        ['mean_cadence_R.L_4ms',      'mean_cadence_R.L_5ms',      'mean_cadence_R.L_65ms'],       ticker.MultipleLocator(10),   ticker.MultipleLocator(5),   '%.0f'),
+    ('Stride Length (m)',          ['mean_StrideLength_R.L_4ms', 'mean_StrideLength_R.L_5ms', 'mean_StrideLength_R.L_65ms'], ticker.MaxNLocator(5),        ticker.AutoMinorLocator(5),  '%.2f'),
+    ('Affected Step Length (m)',   ['affected_StepLength_4ms',   'affected_StepLength_5ms',   'affected_StepLength_65ms'],   ticker.MaxNLocator(5),        ticker.AutoMinorLocator(5),  '%.2f'),
+    ('Unaffected Step Length (m)', ['unaffected_StepLength_4ms', 'unaffected_StepLength_5ms', 'unaffected_StepLength_65ms'], ticker.MaxNLocator(5),        ticker.AutoMinorLocator(5),  '%.2f'),
+]
+
+speed_keys   = ['4ms',     '5ms',     '65ms'   ]
+speed_labels = ['4.0 m/s', '5.0 m/s', '6.5 m/s']
+
+sns.set(style='white')
+
+for spd_idx, (spd_key, spd_label) in enumerate(zip(speed_keys, speed_labels)):
+
+    fig, axes = plt.subplots(2, 3, figsize=(14, 10))
+    fig.suptitle(f'TKA vs UKA vs Control: Gait Metrics — {spd_label}',
+                 fontsize=13, fontweight='bold')
+
+    for idx, (metric_name, cols, major_loc, minor_loc, y_fmt) in enumerate(metric_defs):
+        row = idx // 3
+        col = idx %  3
+        ax  = axes[row, col]
+
+        col_name     = cols[spd_idx]
+        tka_data     = tka[col_name].dropna().reset_index(drop=True)
+        uka_data     = uka[col_name].dropna().reset_index(drop=True)
+        control_data = control[col_name].dropna().reset_index(drop=True)
+
+        # Shared y limits across all speeds for this metric
+        all_vals = pd.concat([
+            tka[cols].stack(),
+            uka[cols].stack(),
+            control[cols].stack()
+        ]).dropna()
+        y_min = all_vals.min() - 0.08 * (all_vals.max() - all_vals.min())
+        y_max = all_vals.max() + 0.08 * (all_vals.max() - all_vals.min())
+
+        # Only include groups with data at this speed
+        groups_data = []
+        if len(tka_data)     > 0: groups_data.append(('TKA',     tka_data))
+        if len(uka_data)     > 0: groups_data.append(('UKA',     uka_data))
+        if len(control_data) > 0: groups_data.append(('Control', control_data))
+
+        plot_df = pd.DataFrame({
+            'value': pd.concat([v for _, v in groups_data], ignore_index=True),
+            'group': sum([[g] * len(v) for g, v in groups_data], [])
+        })
+        group_order = [g for g, _ in groups_data]
+
+        sns.boxplot(
+            data=plot_df, x='group', y='value',
+            order=group_order,
+            hue='group', palette=palette, legend=False,
+            width=0.5, ax=ax,
+            linewidth=1.2,
+            showfliers=False
+        )
+
+        ax.set_ylim(y_min, y_max)
+        ax.set_title(metric_name, fontsize=10, fontweight='bold', pad=10)
+        ax.set_xlabel('')
+
+        # Only leftmost column gets y label and tick labels
+        if col == 0:
+            ax.set_ylabel(metric_name, fontsize=10, labelpad=8)
+        else:
+            ax.set_ylabel('')
+            ax.set_yticklabels([])
+
+        ax.yaxis.set_major_locator(major_loc)
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter(y_fmt))
+        ax.yaxis.set_minor_locator(minor_loc)
+
+        ax.tick_params(axis='x', labelsize=10)
+        ax.tick_params(axis='y', which='major', labelsize=9, length=5, left=True)
+        ax.tick_params(axis='y', which='minor', length=3, left=True)
+
+        # Manual despine — keep left spine so minor ticks show
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(True)
+        ax.spines['bottom'].set_visible(True)
+
+    # Hide unused 6th cell
+    axes[1, 2].set_visible(False)
+
+    legend_elements = [
+        mpatches.Patch(facecolor=tka_color,     label='TKA'),
+        mpatches.Patch(facecolor=uka_color,     label='UKA'),
+        mpatches.Patch(facecolor=control_color, label='Control'),
+    ]
+    fig.legend(handles=legend_elements, loc='lower center', ncol=3,
+               fontsize=10, frameon=False, bbox_to_anchor=(0.5, 0.01))
+    fig.subplots_adjust(top=0.93, bottom=0.10, left=0.12,
+                        right=0.97, hspace=0.55, wspace=0.35)
+
+plt.show()
