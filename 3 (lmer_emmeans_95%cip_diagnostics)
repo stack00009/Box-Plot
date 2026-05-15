@@ -1,0 +1,163 @@
+library(tidyr)
+library(dplyr)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(influence.ME)
+library(readxl)
+
+# ─────────────────────────────────────────
+# STEP 1 — LOAD DATA
+# ─────────────────────────────────────────
+
+z <- read_excel('/Users/nikhilmanoj/Downloads/Biomechanics MSk Lab/UKAvTKA /UKAvTKAdatasetV5.xlsx')
+
+# ─────────────────────────────────────────
+# STEP 2 — RESHAPE TO LONG FORMAT
+# ─────────────────────────────────────────
+
+affected_long <- z %>%
+  select(TMID, timeframe, Age, BMI, procedure,
+         affected_StepLength_4ms,
+         affected_StepLength_5ms,
+         affected_StepLength_65ms) %>%
+  pivot_longer(
+    cols = starts_with("affected_StepLength"),
+    names_to = "speed",
+    values_to = "AffectedStepLength"
+  ) %>%
+  mutate(
+    speed = recode(speed,
+      "affected_StepLength_4ms"  = "4",
+      "affected_StepLength_5ms"  = "5",
+      "affected_StepLength_65ms" = "6.5"),
+    procedure = relevel(as.factor(procedure), ref = "UKA"),
+    speed = factor(speed, levels = c("4", "5", "6.5")),
+    TMID = as.factor(TMID)
+  ) %>%
+  filter(!is.na(AffectedStepLength))
+
+# ─────────────────────────────────────────
+# STEP 3 — FIT THE MODEL
+# ─────────────────────────────────────────
+
+model_Affected <- lmer(AffectedStepLength ~ procedure + speed +
+                         procedure:speed + timeframe +
+                         procedure:timeframe +
+                         Age + BMI + (1 | TMID),
+                       data = affected_long,
+                       REML = TRUE)
+
+# ─────────────────────────────────────────
+# STEP 4 — MODEL SUMMARY WITH P VALUES
+# ─────────────────────────────────────────
+
+summary(model_Affected)
+
+# ─────────────────────────────────────────
+# STEP 5 — EFFECT SIZES WITH 95% CIs
+# ─────────────────────────────────────────
+
+coef_table <- as.data.frame(coef(summary(model_Affected)))
+
+ci <- confint(model_Affected, method = "Wald", level = 0.95)
+ci_fixed <- ci[rownames(ci) %in% rownames(coef_table), ]
+
+results_table <- data.frame(
+  Estimate = round(coef_table$Estimate, 5),
+  CI_lower = round(ci_fixed[, 1], 5),
+  CI_upper = round(ci_fixed[, 2], 5),
+  t_value  = round(coef_table$`t value`, 3),
+  p_value  = round(coef_table$`Pr(>|t|)`, 4)
+)
+rownames(results_table) <- rownames(coef_table)
+
+cat("\n--- Effect Sizes with 95% CIs and P Values ---\n")
+print(results_table)
+
+# ─────────────────────────────────────────
+# STEP 6 — EMMEANS AND PAIRWISE CONTRASTS
+# ─────────────────────────────────────────
+
+emm_Affected <- emmeans(model_Affected, ~ procedure)
+cat("\n--- Estimated Marginal Means ---\n")
+print(emm_Affected)
+
+cat("\n--- Pairwise Contrasts (Bonferroni) ---\n")
+contrast(emm_Affected, method = "pairwise", adjust = "bonferroni")
+
+# ─────────────────────────────────────────
+# STEP 7 — MODEL DIAGNOSTICS
+# ─────────────────────────────────────────
+
+# --- 7a. Convergence ---
+cat("\n--- Convergence Check ---\n")
+conv_check <- summary(model_Affected)$optinfo$conv$lme4
+if (is.null(conv_check)) {
+  cat("No convergence issues detected\n")
+} else {
+  cat("Convergence warning:", conv_check, "\n")
+}
+
+# --- 7b. Residual Normality (Q-Q Plot) ---
+resid_vals <- residuals(model_Affected, type = "pearson")
+
+qqnorm(resid_vals,
+       main = "Q-Q Plot: Affected Step Length",
+       xlab = "Theoretical Quantiles",
+       ylab = "Sample Quantiles")
+qqline(resid_vals, col = "red")
+
+# Shapiro-Wilk formal test
+cat("\n--- Shapiro-Wilk Test (Residual Normality) ---\n")
+cat("p > 0.05 = residuals are normally distributed\n")
+print(shapiro.test(resid_vals))
+
+# --- 7c. Homogeneity of Variance (Residuals vs Fitted) ---
+fitted_vals <- fitted(model_Affected)
+
+plot(fitted_vals, resid_vals,
+     xlab = "Fitted Values",
+     ylab = "Pearson Residuals",
+     main = "Residuals vs Fitted: Affected Step Length")
+abline(h = 0, col = "red", lty = 2)
+
+# --- 7d. Influence of Outliers (Cook's Distance) ---
+cat("\n--- Cook's Distance Analysis ---\n")
+infl <- influence(model_Affected, group = "TMID")
+cooks_d <- cooks.distance(infl)
+
+plot(cooks_d,
+     type = "h",
+     main = "Cook's Distance: Affected Step Length",
+     ylab = "Cook's Distance",
+     xlab = "Patient Index")
+abline(h = 4/130, col = "red", lty = 2)
+
+# Identify influential patients
+threshold <- 4/130
+influential_idx <- which(cooks_d > threshold)
+influential_tmids <- levels(affected_long$TMID)[influential_idx]
+cat("Threshold (4/n):", round(threshold, 4), "\n")
+cat("Influential patients (TMID):", influential_tmids, "\n")
+
+# View their raw data
+cat("\n--- Data for Influential Patients ---\n")
+affected_long %>%
+  filter(TMID %in% influential_tmids) %>%
+  print()
+
+# --- 7e. Sensitivity Analysis ---
+cat("\n--- Sensitivity Analysis (excluding influential patients) ---\n")
+affected_clean <- affected_long %>%
+  filter(!TMID %in% influential_tmids)
+
+model_Affected_clean <- lmer(
+  AffectedStepLength ~ procedure + speed +
+    procedure:speed + timeframe +
+    procedure:timeframe +
+    Age + BMI + (1 | TMID),
+  data = affected_clean,
+  REML = TRUE)
+
+summary(model_Affected_clean)
