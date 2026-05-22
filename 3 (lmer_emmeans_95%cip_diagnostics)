@@ -43,7 +43,6 @@ affected_long <- z %>%
 
 model_Affected <- lmer(AffectedStepLength ~ procedure + speed +
                          procedure:speed + timeframe +
-                         procedure:timeframe +
                          Age + BMI + (1 | TMID),
                        data = affected_long,
                        REML = TRUE)
