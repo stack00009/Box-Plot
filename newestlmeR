@@ -1,0 +1,42 @@
+library(tidyr)
+library(dplyr)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(influence.ME)
+library(readxl)
+
+z <- read_excel('/Users/nikhilmanoj/Downloads/Biomechanics MSk Lab/UKAvTKA /UKAvTKAdatasetV5.xlsx')
+
+affected_long <- z %>%
+  select(TMID, timeframe, Age, BMI, procedure,
+         affected_StepLength_4ms,
+         affected_StepLength_5ms,
+         affected_StepLength_65ms) %>%
+  pivot_longer(
+    cols = starts_with("affected_StepLength"),
+    names_to = "speed",
+    values_to = "AffectedStepLength"
+  ) %>%
+  mutate(
+    speed = recode(speed,
+                   "affected_StepLength_4ms"  = "4",
+                   "affected_StepLength_5ms"  = "5",
+                   "affected_StepLength_65ms" = "6.5"),
+    procedure = relevel(as.factor(procedure), ref = "UKA"),
+    speed = factor(speed, levels = c("4", "5", "6.5")),
+    TMID = as.factor(TMID)
+  ) %>%
+  filter(!is.na(AffectedStepLength))
+
+model_Affected <- lmer(AffectedStepLength ~ procedure + speed +
+                         procedure:speed + procedure:timeframe + timeframe +
+                         Age + BMI + (1 | TMID),
+                       data = affected_long,
+                       REML = TRUE)
+
+summary(model_Affected)
+
+emm_Affected <- emmeans(model_Affected, ~ procedure)
+print(emm_Affected)
+contrast(emm_Affected, method = "pairwise", adjust = "bonferroni")
