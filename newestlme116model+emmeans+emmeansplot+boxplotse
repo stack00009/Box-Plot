@@ -1,0 +1,39 @@
+library(tidyr)
+library(dplyr)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(influence.ME)
+library(readxl)
+library(flexplot)
+
+z <- read_excel('/Users/nikhilmanoj/Downloads/Biomechanics MSk Lab/UKAvTKA /UKAvTKAdatasetV9.xlsx')
+
+z <- z %>%
+  mutate(
+    procedure = relevel(as.factor(procedure), ref = "UKA"),
+    speed = factor(speed, levels = c("4", "5", "6.5")),
+    TMID = as.factor(TMID)
+  )
+
+model_bos <- lmer(BOS ~ procedure + timeframe + speed +
+                          BMI + procedure:speed +
+                         Age + (1 | TMID), REML = TRUE, data = z)
+
+summary(model_bos)
+
+options(width = 200)
+
+emm_bos <- emmeans(model_bos, ~ procedure)
+print(emm_bos)
+contrast(emm_bos, method = "pairwise", adjust = "bonferroni")
+
+plot(emm_bos) 
+
+library(ggplot2)
+
+z_4 <- subset(z, speed == 4)
+
+ggplot(z_4, aes(x = procedure, y = BOS, fill = procedure)) +
+  geom_boxplot() +
+  labs(x = "Procedure", y = "Base of Support")
