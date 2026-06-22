@@ -13,8 +13,8 @@ z <- z %>%
   mutate(
     procedure = relevel(as.factor(procedure), ref = "UKA"),
     speed = factor(speed, levels = c("4", "5", "6.5")),
-    TMID = as.factor(TMID)
-  )
+    TMID = as.factor(TMID),
+    timeframe = ifelse(procedure == "Control", NA, timeframe)
 
 model_bos <- lmer(BOS ~ procedure + timeframe + speed +
                           BMI + procedure:speed +
